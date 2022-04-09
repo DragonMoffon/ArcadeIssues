@@ -10,14 +10,23 @@ uniform float scale;
 
 uniform vec2 screenResolution;
 uniform vec2 offset;
+uniform vec2 size;
+uniform vec2 rot;
 
 out vec4 fragColor;
 
 void main() {
     vec2 texSize = vec2(textureSize(backgroundTexture, 0));
-    vec2 adjustedUV = frag_uv * (screenResolution / texSize);
-    vec2 adjustedOffset = offset / (depth * texSize);
+    vec2 adjustedUV = frag_uv * screenResolution;
+    vec2 adjustedOffset = offset / depth;
 
-    fragColor = texture(backgroundTexture, (adjustedUV + adjustedOffset)/scale, 0);
-    fragColor.a *= (1-blend);
+    vec2 adjusted = (adjustedUV + adjustedOffset);
+
+    fragColor = vec4(0.0);
+    if ((size.x == 0 || (0 <= adjusted.x && adjusted.x <= size.x*scale)) &&
+            (size.y == 0 || (0 <= adjusted.y && adjusted.y <= size.y*scale))) {
+        adjusted = vec2(rot.x*adjusted.x - rot.y*adjusted.y, rot.y*adjusted.x + rot.x*adjusted.y) / (scale * texSize);
+        fragColor = texture(backgroundTexture, adjusted, 0);
+        fragColor.a *= blend;
+    }
 }
