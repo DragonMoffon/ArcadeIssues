@@ -1,84 +1,30 @@
 from PIL import Image
-from math import radians, sin, cos
 
 import arcade
 from arcade.resources import resolve_resource_path
 import arcade.gl as gl
+from pyglet.math import Mat3
 
 
-class BackgroundLayer:
-    DefaultGeo: gl.Geometry = None
+class BackgroundTexture:
 
-    def __init__(self,
-                 texture: gl.Texture,
-                 shader: gl.Program,
-                 size: tuple[float, float],
-                 depth: float = 1.0,  scale: float = 1.0,
-                 offset: tuple[float, float] = (0.0, 0.0)):
-        if BackgroundLayer.DefaultGeo is None:
-            _context = arcade.get_window().ctx
-            BackgroundLayer.DefaultGeo = gl.geometry.quad_2d_fs()
-
-        self.texture: gl.Texture = texture
-        self.shader: gl.Program = shader
-
-        self._size = size
-        self.shader['size'] = size
-
-        self._depth = depth
-        self.shader['depth'] = depth
-
-        self._offset = offset
-        self.shader['offset'] = offset
+    def __init__(self, texture: gl.Texture,
+                 offset: tuple[float, float] = (0.0, 0.0),
+                 scale: float = 1.0, angle: float = 0.0):
+        self.texture = texture
 
         self._scale = scale
-        self.shader['scale'] = scale
+        self._scale_transform = Mat3().scale(scale, scale)
 
-        self._angle = 0.0
-        self.shader['rot'] = 1.0, 0.0
+        self._angle = angle
+        self._angle_transform = Mat3().rotate(angle)
 
-    @staticmethod
-    def from_file(tex_src: str,
-                  depth: float = 1.0,
-                  scale: float = 1.0,
-                  offset: tuple[float, float] = (0.0, 0.0),
-                  size: tuple[float, float] = None,
-                  *,
-                  shader_src: tuple[str, str] = ("vertex.glsl", "background_frag.glsl"),
-                  filters: tuple[int, int] = (gl.NEAREST, gl.NEAREST)):
-
-        _context = arcade.get_window().ctx
-
-        with Image.open(resolve_resource_path(tex_src)).convert("RGBA") as img:
-            texture = _context.texture(img.size, data=img.transpose(Image.FLIP_TOP_BOTTOM).tobytes(),
-                                       filter=filters)
-            if size is None:
-                size = (0, texture.height)
-
-        shader = _context.load_program(vertex_shader=shader_src[0], fragment_shader=shader_src[1])
-        return BackgroundLayer(texture, shader, size, depth, scale, offset)
-
-    def draw(self, offset: tuple[int, int] = (0.0, 0.0), transparency: float = 1.0, geometry: gl.geometry = None):
-        self.shader['blend'] = transparency
-        self.shader['offset'] = offset[0] - self.offset[0], offset[1] - self.offset[1]
-        self.texture.use(0)
-
-        if geometry is None:
-            BackgroundLayer.DefaultGeo.render(self.shader)
-        else:
-            geometry.render(self.shader)
+        self._offset = offset
+        self._offset_transform = Mat3().translate(offset[0], offset[1])
 
     @property
-    def depth(self):
-        return self._depth
-
-    @property
-    def offset(self):
-        return self._offset
-
-    @offset.setter
-    def offset(self, value: tuple[int, int]):
-        self._offset = value
+    def pixel_transform(self):
+        return self._offset_transform @ self._angle_transform @ self._scale_transform
 
     @property
     def scale(self):
@@ -87,7 +33,7 @@ class BackgroundLayer:
     @scale.setter
     def scale(self, value: float):
         self._scale = value
-        self.shader['scale'] = value
+        self._scale_transform = Mat3().scale(value, value)
 
     @property
     def angle(self):
@@ -96,74 +42,272 @@ class BackgroundLayer:
     @angle.setter
     def angle(self, value: float):
         self._angle = value
-        self.shader['rot'] = cos(radians(value)), sin(radians(value))
+        self._angle_transform = Mat3().rotate(value)
+
+    @property
+    def offset(self):
+        return self._scale
+
+    @offset.setter
+    def offset(self, value: tuple[float, float]):
+        self._offset = value
+        self._offset_transform = Mat3().translate(-value[0], value[1])
+
+    @property
+    def wrap_x(self) -> int:
+        """
+        Get or set the horizontal wrapping of the texture. This decides how textures
+        are read when texture coordinates are outside the ``[0.0, 1.0]`` area.
+        Default value is ``REPEAT``.
+
+        Valid options are::
+
+            # Note: Enums can also be accessed in arcade.gl
+            # Repeat pixels on the y axis
+            texture.wrap_x = ctx.REPEAT
+            # Repeat pixels on the y axis mirrored
+            texture.wrap_x = ctx.MIRRORED_REPEAT
+            # Repeat the edge pixels when reading outside the texture
+            texture.wrap_x = ctx.CLAMP_TO_EDGE
+            # Use the border color (black by default) when reading outside the texture
+            texture.wrap_x = ctx.CLAMP_TO_BORDER
+
+        :type: int
+        """
+        return self.texture.wrap_x
+
+    @wrap_x.setter
+    def wrap_x(self, value: int):
+        self.texture.wrap_x = value
+
+    @property
+    def wrap_y(self) -> int:
+        """
+        Get or set the horizontal wrapping of the texture. This decides how textures
+        are read when texture coordinates are outside the ``[0.0, 1.0]`` area.
+        Default value is ``REPEAT``.
+
+        Valid options are::
+
+            # Note: Enums can also be accessed in arcade.gl
+            # Repeat pixels on the x axis
+            texture.wrap_x = ctx.REPEAT
+            # Repeat pixels on the x axis mirrored
+            texture.wrap_x = ctx.MIRRORED_REPEAT
+            # Repeat the edge pixels when reading outside the texture
+            texture.wrap_x = ctx.CLAMP_TO_EDGE
+            # Use the border color (black by default) when reading outside the texture
+            texture.wrap_x = ctx.CLAMP_TO_BORDER
+
+        :type: int
+        """
+        return self.texture.wrap_y
+
+    @wrap_y.setter
+    def wrap_y(self, value: int):
+        self.texture.wrap_y = value
+
+    def use(self, unit: int = 0) -> None:
+        """Bind the texture to a channel,
+
+        :param int unit: The texture unit to bind the texture.
+        """
+        self.texture.use(unit)
 
 
 class Background:
 
-    def __init__(self, context: arcade.ArcadeContext, view_port_size: tuple[int, int]):
-        self.context = context
+    def __init__(self,
+                 texture: BackgroundTexture,
+                 pos: tuple[float, float],
+                 size: tuple[float, float],
+                 shader: gl.Program = None,
+                 geometry: gl.Geometry = None):
 
-        self._view_port = view_port_size
+        if shader is None:
+            shader = arcade.get_window().ctx.load_program(vertex_shader="vertex_geometry.glsl",
+                                                          fragment_shader="background_frag.glsl")
+        self.shader = shader
 
-        self._offset = 0, 0
+        if geometry is None:
+            geometry = gl.geometry.quad_2d(pos=(0.5, 0.5))
+        self.geometry = geometry
 
-        self.layers: list[BackgroundLayer] = []
+        self.texture = texture
 
-    def add(self, layer: BackgroundLayer):
-        layer.shader['screenResolution'] = self._view_port
-        if not len(self.layers) or layer.depth <= self.layers[-1].depth:
-            self.layers.append(layer)
-        elif layer.depth > self.layers[0].depth:
-            self.layers.insert(0, layer)
-        else:
-            for i in range(len(self.layers[1:])):
-                if layer.depth > self.layers[i+1].depth:
-                    self.layers.insert(i+1, layer)
-                    break
+        self._pos = pos
+        try:
+            self.shader['pos'] = pos
+        except KeyError:
+            pass
 
-    @property
-    def view_port(self):
-        return self._view_port
-
-    @view_port.setter
-    def view_port(self, value: tuple[int, int]):
-        self._view_port = value
-        for layer in self.layers:
-            layer.shader['screenResolution'] = value
+        self._size = size
+        try:
+            self.shader['size'] = size
+        except KeyError:
+            pass
 
     @staticmethod
     def from_file(tex_src: str,
-                  depth: float = 1.0,
-                  scale: float = 1.0,
+                  pos: tuple[float, float] = (0.0, 0.0),
+                  size: tuple[int, int] = None,
                   offset: tuple[float, float] = (0.0, 0.0),
-                  size: tuple[float, float] = None,
+                  scale: float = 1.0,
+                  angle: float = 0.0,
                   *,
-                  filters: tuple[int, int] = (gl.NEAREST, gl.NEAREST)):
-
-        layer = BackgroundLayer.from_file(tex_src, depth, scale, offset, size, filters=filters)
+                  filters=(gl.NEAREST, gl.NEAREST),
+                  shader: gl.Program = None,
+                  geometry: gl.Geometry = None):
         _context = arcade.get_window().ctx
-        background = Background(_context, _context.viewport[2:])
-        background.add(layer)
-        return background
 
-    def add_from_file(self,
-                      tex_src: str,
-                      depth: float = 1.0,
-                      scale: float = 1.0,
-                      offset: tuple[float, float] = (0.0, 0.0),
-                      size: tuple[float, float] = None,
-                      *,
-                      shader_src: tuple[str, str] = ("vertex.glsl", "background_frag.glsl"),
-                      filters: tuple[int, int] = (gl.NEAREST, gl.NEAREST)):
-        layer = BackgroundLayer.from_file(tex_src, depth, scale, offset, size,
-                                          shader_src=shader_src, filters=filters)
-        self.add(layer)
-        return layer
+        with Image.open(resolve_resource_path(tex_src)).convert("RGBA") as img:
+            texture = _context.texture(img.size, data=img.transpose(Image.FLIP_TOP_BOTTOM).tobytes(),
+                                       filter=filters)
+            if size is None:
+                size = texture.size
 
-    def render(self):
-        for layer in self.layers:
-            layer.draw(self._offset)
+        background_texture = BackgroundTexture(texture, offset, scale, angle)
+        return Background(background_texture, pos, size, shader, geometry)
+
+    @property
+    def pos(self):
+        return self._pos
+
+    @pos.setter
+    def pos(self, value: tuple[float, float]):
+        self._pos = value
+
+    @property
+    def size(self):
+        return self._size
+
+    @size.setter
+    def size(self, value: tuple[int, int]):
+        self._size = value
+        self.shader['size'] = value
+
+    def draw(self, shift=(0, 0)):
+        self.shader['pixelTransform'] = self.texture.pixel_transform
+        self.shader['pos'] = self.pos[0]+shift[0], self.pos[1]+shift[1]
+        self.texture.use(0)
+
+        self.geometry.render(self.shader)
+
+    @property
+    def blend(self):
+        try:
+            return self.shader['blend']
+        except KeyError:
+            return 1
+
+    @blend.setter
+    def blend(self, value):
+        try:
+            self.shader['blend'] = value
+        except KeyError:
+            pass
+
+    def blend_layer(self, other, percent):
+        self.shader['blend'] = 1 - percent
+        other.shader['blend'] = percent
+
+
+class BackgroundGroup:
+
+    def __init__(self):
+        self.backgrounds: list[Background] = []
+
+        self._pos = [0, 0]
+        self._offset = [0, 0]
+
+    @property
+    def pos(self):
+        return self._pos
+
+    @pos.setter
+    def pos(self, value):
+        self._pos = value
+
+    @property
+    def offset(self):
+        return self._offset
+
+    @offset.setter
+    def offset(self, value):
+        self._offset = value
+        for background in self.backgrounds:
+            background.texture.offset = value
+
+    def add(self, item: Background):
+        if item not in self.backgrounds:
+            self.backgrounds.append(item)
+        else:
+            print("WARNING: Background already in group")
+
+    def extend(self, items: list[Background]):
+        for item in items:
+            self.add(item)
+
+    def draw(self):
+        for background in self.backgrounds:
+            background.draw(self.pos)
+
+
+class ParallaxBackgroundGroup:
+
+    def __init__(self, backgrounds: list[Background] = None, depths: list[float] = None):
+        self.backgrounds: list[Background] = [] if backgrounds is None else backgrounds
+        self.depths: list[float] = [] if depths is None else backgrounds
+
+        if len(self.backgrounds) != len(self.depths):
+            raise ValueError("The number of backgrounds does not equal the number of depth values")
+
+        self._pos = [0, 0]
+        self._offset = [0, 0]
+
+    @property
+    def pos(self):
+        return self._pos
+
+    @pos.setter
+    def pos(self, value):
+        self._pos = value
+
+    @property
+    def offset(self):
+        return self._offset
+
+    @offset.setter
+    def offset(self, value):
+        self._offset = value
+        for index, background in enumerate(self.backgrounds):
+            depth = self.depths[index]
+            background.texture.offset = value[0] / depth, value[1] / depth
+
+    def add(self, item: Background, depth: float = 1.0):
+        if item not in self.backgrounds:
+            self.backgrounds.append(item)
+            self.depths.append(depth)
+        else:
+            print("WARNING: Background already in group")
+
+    def remove(self, item: Background):
+        index = self.backgrounds.index(item)
+        self.backgrounds.remove(item)
+        self.depths.pop(index)
+
+    def change_depth(self, item: Background, new_depth: float):
+        self.depths[self.backgrounds.index(item)] = new_depth
+
+    def extend(self, items: list[Background], depths: list[float]):
+        for index, item in enumerate(items):
+            self.add(item, depths[index])
+
+    def draw(self):
+        for background in self.backgrounds:
+            background.draw(self.pos)
+
+
 
 
 
