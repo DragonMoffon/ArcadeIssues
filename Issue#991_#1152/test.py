@@ -1,6 +1,6 @@
 import arcade
 
-from background import Background, ParallaxBackgroundGroup
+from background import Background, ParallaxBackground
 
 SCREEN_WIDTH, SCREEN_HEIGHT = 700, 700  # arcade.get_display_size()
 
@@ -17,7 +17,7 @@ class BackgroundWindow(arcade.Window):
         self.background = Background.from_file(":resources:images/cybercity_background/foreground.png",
                                                (0.0, 0.0), (SCREEN_WIDTH, 576), scale=3)
 
-        self.group = ParallaxBackgroundGroup()
+        self.group = ParallaxBackground()
         self.group.extend([self.far_background, self.mid_background, self.background], [3, 2, 1])
 
         self.x_speed = 0

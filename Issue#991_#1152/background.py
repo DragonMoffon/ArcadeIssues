@@ -7,6 +7,13 @@ from pyglet.math import Mat3
 
 
 class BackgroundTexture:
+    """
+    BackgroundTextures are PODs (packet of data) types. They have very little functionality by themselves,
+    but are used by Backgrounds. They hold an arcade.gl.Texture and 3 Pyglet.Maths.Mat3s.
+
+    The Mat3s define the scaling, rotation, and translation of the pixel data in the texture.
+    see background_frag.glsl in resources/shaders/backgrounds for an implementation of this.
+    """
 
     def __init__(self, texture: gl.Texture,
                  offset: tuple[float, float] = (0.0, 0.0),
@@ -116,6 +123,18 @@ class BackgroundTexture:
 
 
 class Background:
+    """
+    Backgrounds are large geometries which a Background texture is rendered.
+    By default, the position defines the bottom left corner.
+    If the size is larger than the given BackgroundTexture the texture will repeat.
+
+    A shift value can be given when calling draw.
+    This can be used to move the background without actually adjusting the position
+
+    You may supply your own shader and geometries.
+    Unless you make a subclass the shader will need to implement 4 uniforms
+        vec2 pos, vec2 size, mat3 pixelTransform, and float blend.
+    """
 
     def __init__(self,
                  texture: BackgroundTexture,
@@ -158,6 +177,20 @@ class Background:
                   filters=(gl.NEAREST, gl.NEAREST),
                   shader: gl.Program = None,
                   geometry: gl.Geometry = None):
+        """
+        This will generate a Background from an input image source. The generated texture is not stored in the
+        texture cache or any texture atlas.
+        :param tex_src: The image source.
+        :param pos: The position of the Background (Bottom Left Corner by default).
+        :param size: The width and height of the Background.
+        :param offset: The BackgroundTexture offset.
+        :param scale: The BackgroundTexture Scale.
+        :param angle: The BackgroundTexture angle.
+        :param filters: The OpenGl Texture filters (gl.Nearest by default).
+        :param shader: The shader used for rendering.
+        :param geometry: The geometry used for rendering (a rectangle equal to the size by default).
+        :return: The generated Background.
+        """
         _context = arcade.get_window().ctx
 
         with Image.open(resolve_resource_path(tex_src)).convert("RGBA") as img:
@@ -213,6 +246,12 @@ class Background:
 
 
 class BackgroundGroup:
+    """
+    If you have many backgrounds which you would like to draw together and move together this can help.
+
+    The pos of the Background Group is independent of the Background pos.
+    The offset of the BackgroundGroup is the same for each background.
+    """
 
     def __init__(self):
         self.backgrounds: list[Background] = []
@@ -253,7 +292,17 @@ class BackgroundGroup:
             background.draw(self.pos)
 
 
-class ParallaxBackgroundGroup:
+class ParallaxBackground:
+    """
+    The ParallaxBackground holds a list of backgrounds and a list of depths.
+
+    When you change the offset through the ParallaxBackground
+    each Background's offset will be set inversely proportional to its depth.
+
+    This creates the effect of Backgrounds with greater depths appearing further away.
+
+    The depth does not affect the positioning of layers at all.
+    """
 
     def __init__(self, backgrounds: list[Background] = None, depths: list[float] = None):
         self.backgrounds: list[Background] = [] if backgrounds is None else backgrounds
