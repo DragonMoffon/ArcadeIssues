@@ -46,7 +46,7 @@ class NinePatch:
         self.renderer.draw_hit_boxes(arcade.color.LIME_GREEN)
 
     def drag(self, x, y, dx, dy):
-        p = (x, y)
+        p = (x-dx, y-dy)
         if self.body.collides_with_point(p):
             self.renderer.move(dx, dy)
         elif self.t.collides_with_point(p):
