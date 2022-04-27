@@ -144,7 +144,7 @@ class Background:
                  geometry: gl.Geometry = None):
 
         if shader is None:
-            shader = arcade.get_window().ctx.load_program(vertex_shader="vertex_geometry.glsl",
+            shader = arcade.get_window().ctx.load_program(vertex_shader="background_vert.glsl",
                                                           fragment_shader="background_frag.glsl")
         self.shader = shader
 
@@ -158,13 +158,13 @@ class Background:
         try:
             self.shader['pos'] = pos
         except KeyError:
-            pass
+            print("Attempting to set uniform 'pos' when the shader does not have a uniform with that name.")
 
         self._size = size
         try:
             self.shader['size'] = size
         except KeyError:
-            pass
+            print("Attempting to set uniform 'size' when the shader does not have a uniform with that name.")
 
     @staticmethod
     def from_file(tex_src: str,
@@ -217,11 +217,22 @@ class Background:
     @size.setter
     def size(self, value: tuple[int, int]):
         self._size = value
-        self.shader['size'] = value
+        try:
+            self.shader['size'] = value
+        except KeyError:
+            print("Attempting to set uniform 'size' when the shader does not have a uniform with that name.")
 
     def draw(self, shift=(0, 0)):
-        self.shader['pixelTransform'] = self.texture.pixel_transform
-        self.shader['pos'] = self.pos[0]+shift[0], self.pos[1]+shift[1]
+        try:
+            self.shader['pixelTransform'] = self.texture.pixel_transform
+        except KeyError:
+            print("Attempting to set uniform 'pixelTransform' when the shader does not have a uniform with that name.")
+
+        try:
+            self.shader['pos'] = self.pos[0]+shift[0], self.pos[1]+shift[1]
+        except KeyError:
+            print("Attempting to set uniform 'pos' when the shader does not have a uniform with that name.")
+
         self.texture.use(0)
 
         self.geometry.render(self.shader)
@@ -231,6 +242,8 @@ class Background:
         try:
             return self.shader['blend']
         except KeyError:
+            print("Attempting to get uniform 'blend' when the shader "
+                  "does not have a uniform with that name. Defaulting to 1.")
             return 1
 
     @blend.setter
@@ -238,11 +251,11 @@ class Background:
         try:
             self.shader['blend'] = value
         except KeyError:
-            pass
+            print("Attempting to set uniform 'blend' when the shader does not have a uniform with that name.")
 
     def blend_layer(self, other, percent):
-        self.shader['blend'] = 1 - percent
-        other.shader['blend'] = percent
+        self.blend = 1 - percent
+        other.blend = percent
 
 
 class BackgroundGroup:
