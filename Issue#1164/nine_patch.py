@@ -1,12 +1,12 @@
 import arcade
+import arcade.gl as gl
+from array import array
 
 
 class NinePatch:
     """
     Using nine sprites allows for a resizable ui element whose corners do not get distorted
     when changing the width and height.
-
-    The width and height defines the size of the inside area and does not include the border or corners.
 
     TODO: Add changeable sprites for corners, edges, and center. Add size jump and texture repeat.
     """
@@ -56,10 +56,10 @@ class NinePatch:
 
     @size.setter
     def size(self, _size):
-        self._width = _size[0]
-        self._height = _size[1]
-        self._position_sprites(*self._pos, *_size)
-        self._scale_sprites(*_size)
+        self._width = 1 + self._size*2 if _size[0] < 1 + self._size*2 else _size[0]
+        self._height = 1 + self._size*2 if _size[1] < 1 + self._size*2 else _size[1]
+        self._position_sprites(*self._pos, self._width, self._height)
+        self._scale_sprites(self._width, self._height)
 
     @property
     def pos(self):
@@ -150,4 +150,75 @@ class NinePatch:
             self.move(dx, 0)
             self.size = self._width - dx, self._height
 
+
+class NinePatchShader:
+
+    def __init__(self, texture: arcade.Texture, x, y, width, height, start, end, atlas: arcade.TextureAtlas = None):
+        ctx = arcade.get_window().ctx
+
+        # ModernGl components for render.
+        self.program = ctx.load_program(vertex_shader="nine_patch_vert.glsl",
+                                        fragment_shader="nine_patch_frag.glsl")
+        try:
+            self.program["uv_texture"] = 0
+        except:
+            pass
+
+        try:
+            self.program['sprite_texture'] = 1
+        except:
+            pass
+
+        data = array('f', [0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0])
+        self.geometry = ctx.geometry([gl.BufferDescription(ctx.buffer(data=data), '2f', ['in_uv'])],
+                                     mode=ctx.TRIANGLE_STRIP)
+
+        # Required references for the texture
+        self._atlas: arcade.TextureAtlas = ctx.default_atlas if atlas is None else atlas
+        self._atlas.texture.filter = ctx.NEAREST, ctx.NEAREST
+        if not self._atlas.has_texture(texture):
+            self._atlas.add(texture)
+        self._texture: arcade.Texture = texture
+        try:
+            self.program['texture_id'] = self._atlas.get_texture_id(self._texture.name)
+        except:
+            pass
+
+        # X, Y from bottom left.
+        self._x = x
+        self._y = y
+
+        # size includes outer edge
+        self._width = width
+        self._height = height
+
+        self.program['patch_data'] = x, y, width, height
+
+        # pixel coordinate of start, and end
+        self._start = start
+        self._end = end
+
+        # end pixel UV relative to opposite corner.
+        self._end_diff = self._end[0] - texture.width, self._end[1] - texture.height
+
+        # texture UV coordinate of start, and end.
+        try:
+            self.program["base_uv"] = (start[0] / texture.width, start[1] / texture.height,
+                                       end[0] / texture.width, end[1] / texture.height)
+        except:
+            pass
+
+        # rendered UV coordinate of start, and end.
+        try:
+            self.program["var_uv"] = (self._start[0] / width, self._start[1] / height,
+                                      1 + self._end_diff[0] / width, 1 + self._end_diff[1] / height)
+        except:
+            pass
+
+        print(self._atlas.get_region_info(texture.name).y, self._atlas.max_width, self._atlas.get_region_info(texture.name).texture_coordinates)
+
+    def draw(self):
+        self._atlas.use_uv_texture(0)
+        self._atlas.texture.use(1)
+        self.geometry.render(self.program)
 
